@@ -12,6 +12,7 @@ import {
   JUDGMENT_LABEL,
   isPastStage,
   noteTravelY,
+  type HitEffect,
   type JudgmentKind,
 } from "./judgment";
 import { useNoteStore } from "../store/noteStore";
@@ -69,12 +70,6 @@ const laneLabelStyles = LANE_DEFS.map(
 );
 
 const LANE_PRESS_DURATION = 0.18;
-
-export type HitEffect = {
-  kind: JudgmentKind;
-  lane: number;
-  startedAt: number;
-};
 
 export type LanePress = {
   lane: number;
@@ -177,8 +172,6 @@ function drawBurst(graphics: Graphics, effect: HitEffect, age: number) {
 type NoteFieldProps = {
   audioContextRef: RefObject<AudioContext | null>;
   startTimeRef: RefObject<number>;
-  effectsRef: RefObject<HitEffect[]>;
-  onMiss: (lane: number) => void;
 };
 
 const LaneFlash = memo(function LaneFlash({
@@ -220,8 +213,7 @@ const LaneFlash = memo(function LaneFlash({
 const JudgmentLabel = memo(function JudgmentLabel({
   audioContextRef,
   startTimeRef,
-  effectsRef,
-}: Pick<NoteFieldProps, "audioContextRef" | "startTimeRef" | "effectsRef">) {
+}: NoteFieldProps) {
   const labelRef = useRef<Text | null>(null);
   const shownKindRef = useRef<JudgmentKind | null>(null);
 
@@ -231,7 +223,8 @@ const JudgmentLabel = memo(function JudgmentLabel({
     if (!audioContext || !label) return;
 
     const elapsedTime = audioContext.currentTime - startTimeRef.current;
-    const latest = effectsRef.current[effectsRef.current.length - 1];
+    const effects = useNoteStore.getState().effects;
+    const latest = effects[effects.length - 1];
 
     if (!latest || elapsedTime - latest.startedAt >= EFFECT_DURATION[latest.kind]) {
       label.alpha = 0;
@@ -250,7 +243,7 @@ const JudgmentLabel = memo(function JudgmentLabel({
     label.alpha = fade * 0.72;
     label.scale.set(1);
     label.position.set(JUDGMENT_X, JUDGMENT_Y - progress * 8);
-  }, [audioContextRef, effectsRef, startTimeRef]);
+  }, [audioContextRef, startTimeRef]);
 
   useTick(updateLabel);
 
@@ -272,8 +265,7 @@ const JudgmentLabel = memo(function JudgmentLabel({
 const EffectLayer = memo(function EffectLayer({
   audioContextRef,
   startTimeRef,
-  effectsRef,
-}: Pick<NoteFieldProps, "audioContextRef" | "startTimeRef" | "effectsRef">) {
+}: NoteFieldProps) {
   const graphicsRef = useRef<Graphics | null>(null);
 
   const updateEffects = useCallback(() => {
@@ -282,7 +274,7 @@ const EffectLayer = memo(function EffectLayer({
     if (!audioContext || !graphics) return;
 
     const elapsedTime = audioContext.currentTime - startTimeRef.current;
-    const effects = effectsRef.current;
+    const effects = useNoteStore.getState().effects;
 
     for (let index = effects.length - 1; index >= 0; index -= 1) {
       const effect = effects[index];
@@ -295,7 +287,7 @@ const EffectLayer = memo(function EffectLayer({
     for (const effect of effects) {
       drawBurst(graphics, effect, elapsedTime - effect.startedAt);
     }
-  }, [audioContextRef, effectsRef, startTimeRef]);
+  }, [audioContextRef, startTimeRef]);
 
   useTick({
     callback: updateEffects,
@@ -354,8 +346,6 @@ const drawNotes = noteFills.map((fill) => (graphics: Graphics) => {
 const NoteField = memo(function NoteField({
   audioContextRef,
   startTimeRef,
-  effectsRef,
-  onMiss,
 }: NoteFieldProps) {
   const noteGraphicsRef = useRef<Array<Graphics | null>>([]);
 
@@ -378,14 +368,14 @@ const NoteField = memo(function NoteField({
       if (isPastStage(noteY)) {
         note.hit = true;
         graphic.visible = false;
-        onMiss(note.lane);
+        useNoteStore.getState().recordJudgment("miss", note.lane, elapsedTime);
         return;
       }
 
       graphic.visible = true;
       graphic.position.set(noteLeft(note.lane), noteY);
     });
-  }, [audioContextRef, onMiss, startTimeRef]);
+  }, [audioContextRef, startTimeRef]);
 
   useTick(updateNotes);
 
@@ -402,11 +392,7 @@ const NoteField = memo(function NoteField({
           visible={false}
         />
       ))}
-      <EffectLayer
-        audioContextRef={audioContextRef}
-        startTimeRef={startTimeRef}
-        effectsRef={effectsRef}
-      />
+      <EffectLayer audioContextRef={audioContextRef} startTimeRef={startTimeRef} />
     </pixiContainer>
   );
 });
@@ -420,9 +406,7 @@ export const Stage = memo(function Stage({
   isPlaying,
   audioContextRef,
   startTimeRef,
-  effectsRef,
   pressesRef,
-  onMiss,
 }: StageProps) {
   return (
     <Application
@@ -436,11 +420,7 @@ export const Stage = memo(function Stage({
     >
       <pixiGraphics draw={drawStage} />
       <LaneFlash pressesRef={pressesRef} />
-      <JudgmentLabel
-        audioContextRef={audioContextRef}
-        startTimeRef={startTimeRef}
-        effectsRef={effectsRef}
-      />
+      <JudgmentLabel audioContextRef={audioContextRef} startTimeRef={startTimeRef} />
       <pixiContainer>
         {LANE_DEFS.map((lane, index) => (
           <pixiText
@@ -457,12 +437,7 @@ export const Stage = memo(function Stage({
         ))}
       </pixiContainer>
       {isPlaying ? (
-        <NoteField
-          audioContextRef={audioContextRef}
-          startTimeRef={startTimeRef}
-          effectsRef={effectsRef}
-          onMiss={onMiss}
-        />
+        <NoteField audioContextRef={audioContextRef} startTimeRef={startTimeRef} />
       ) : null}
     </Application>
   );

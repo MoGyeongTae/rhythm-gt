@@ -9,9 +9,10 @@ export type Note = {
 
 export type JudgmentKind = "perfect" | "good" | "bad" | "miss";
 
-export type Judgment = {
-  text: string;
-  color: string;
+export type HitEffect = {
+  kind: JudgmentKind;
+  lane: number;
+  startedAt: number;
 };
 
 const PERFECT_WINDOW = 0.05;
@@ -24,15 +25,6 @@ export const JUDGMENT_LABEL: Record<JudgmentKind, string> = {
   bad: "BAD",
   miss: "MISS",
 };
-
-export const JUDGMENT_CSS: Record<JudgmentKind, string> = {
-  perfect: "#00ffcc",
-  good: "#ffcc00",
-  bad: "#ff5500",
-  miss: "red",
-};
-
-export const EMPTY_JUDGMENT: Judgment = { text: "-", color: "white" };
 
 export function createNotes(): Note[] {
   const spawnOffset = JUDGE_LINE_Y / NOTE_SPEED;
@@ -74,8 +66,4 @@ export function judgeTiming(diff: number): JudgmentKind | null {
   if (diff <= PERFECT_WINDOW) return "perfect";
   if (diff <= GOOD_WINDOW) return "good";
   return "bad";
-}
-
-export function judgmentOf(kind: JudgmentKind): Judgment {
-  return { text: JUDGMENT_LABEL[kind], color: JUDGMENT_CSS[kind] };
 }

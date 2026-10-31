@@ -1,48 +1,17 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Stage, type HitEffect, type LanePress } from "./game/Stage";
-import {
-  EMPTY_JUDGMENT,
-  findNearestUnhitNote,
-  judgeTiming,
-  judgmentOf,
-  type Judgment,
-  type JudgmentKind,
-} from "./game/judgment";
-import { useNoteStore } from "./store/noteStore";
+import { useEffect, useRef, useState } from "react";
+import { Stage, type LanePress } from "./game/Stage";
+import { findNearestUnhitNote, judgeTiming } from "./game/judgment";
 import { laneIndexFromKey } from "./game/playfield";
+import { useNoteStore } from "./store/noteStore";
 
 export default function RhythmGame() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [judgment, setJudgment] = useState<Judgment>(EMPTY_JUDGMENT);
 
   const audioContextRef = useRef<AudioContext | null>(null);
   const audioBufferRef = useRef<AudioBuffer | null>(null);
   const startTimeRef = useRef(0);
-  const effectsRef = useRef<HitEffect[]>([]);
   const pressesRef = useRef<LanePress[]>([]);
-
-  const reportJudgment = useCallback((kind: JudgmentKind, lane: number) => {
-    setJudgment(judgmentOf(kind));
-    const audioContext = audioContextRef.current;
-    if (!audioContext) return;
-
-    effectsRef.current.push({
-      kind,
-      lane,
-      startedAt: audioContext.currentTime - startTimeRef.current,
-    });
-    if (effectsRef.current.length > 12) {
-      effectsRef.current.shift();
-    }
-  }, []);
-
-  const handleMiss = useCallback(
-    (lane: number) => {
-      reportJudgment("miss", lane);
-    },
-    [reportJudgment],
-  );
 
   const initAudio = async () => {
     setIsLoading(true);
@@ -80,7 +49,6 @@ export default function RhythmGame() {
     source.buffer = buffer;
     source.connect(audioContext.destination);
 
-    effectsRef.current = [];
     pressesRef.current = [];
     startTimeRef.current = audioContext.currentTime;
     source.start(0);
@@ -108,12 +76,12 @@ export default function RhythmGame() {
       if (!kind) return;
 
       nearest.note.hit = true;
-      reportJudgment(kind, lane);
+      useNoteStore.getState().recordJudgment(kind, lane, elapsedTime);
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isPlaying, reportJudgment]);
+  }, [isPlaying]);
 
   return (
     <div
@@ -138,15 +106,11 @@ export default function RhythmGame() {
         </button>
       )}
 
-      <h2 style={{ color: judgment.color }}>판정: {judgment.text}</h2>
-
       <Stage
         isPlaying={isPlaying}
         audioContextRef={audioContextRef}
         startTimeRef={startTimeRef}
-        effectsRef={effectsRef}
         pressesRef={pressesRef}
-        onMiss={handleMiss}
       />
     </div>
   );

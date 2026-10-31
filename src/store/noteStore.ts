@@ -1,13 +1,27 @@
 import { create } from "zustand";
-import { createNotes, type Note } from "../game/judgment";
+import { createNotes, type HitEffect, type JudgmentKind, type Note } from "../game/judgment";
+
+const MAX_EFFECTS = 12;
 
 type NoteState = {
   notes: Note[];
+  effects: HitEffect[];
   resetNotes: () => void;
+  recordJudgment: (kind: JudgmentKind, lane: number, startedAt: number) => void;
 };
 
-export const useNoteStore = create<NoteState>((set) => ({
+export const useNoteStore = create<NoteState>((set, get) => ({
   notes: [],
-  // 히트는 이 배열의 노트 객체에 직접 표시합니다. resetNotes만 새 배열을 발행합니다.
-  resetNotes: () => set({ notes: createNotes() }),
+  effects: [],
+  // 히트와 이펙트 배열은 같은 객체를 직접 바꿉니다.
+  resetNotes: () =>
+    set({
+      notes: createNotes(),
+      effects: [],
+    }),
+  recordJudgment: (kind, lane, startedAt) => {
+    const effects = get().effects;
+    effects.push({ kind, lane, startedAt });
+    if (effects.length > MAX_EFFECTS) effects.shift();
+  },
 }));
