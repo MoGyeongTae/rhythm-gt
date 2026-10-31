@@ -13,8 +13,8 @@ import {
   isPastStage,
   noteTravelY,
   type JudgmentKind,
-  type Note,
 } from "./judgment";
+import { useNoteStore } from "../store/noteStore";
 import {
   CHART,
   JUDGE_LINE_Y,
@@ -68,7 +68,6 @@ const laneLabelStyles = LANE_DEFS.map(
     }),
 );
 
-const RECEPTOR_Y = JUDGE_LINE_Y + NOTE_HEIGHT / 2;
 const LANE_PRESS_DURATION = 0.18;
 
 export type HitEffect = {
@@ -89,29 +88,29 @@ const EFFECT_DURATION: Record<JudgmentKind, number> = {
   miss: 0.42,
 };
 
-const EFFECT_STYLE: Record<
-  JudgmentKind,
-  { color: number; sparks: number; ring: number; flash: number }
-> = {
-  perfect: { color: 0x7dffe8, sparks: 8, ring: 28, flash: 0.42 },
-  good: { color: 0xffcc00, sparks: 6, ring: 20, flash: 0.28 },
-  bad: { color: 0xff5500, sparks: 5, ring: 14, flash: 0.2 },
-  miss: { color: 0xff3355, sparks: 0, ring: 12, flash: 0.36 },
+const EFFECT_STYLE: Record<JudgmentKind, { color: number; sparks: number; ring: number }> = {
+  perfect: { color: 0x7dffe8, sparks: 8, ring: 28 },
+  good: { color: 0xffcc00, sparks: 6, ring: 20 },
+  bad: { color: 0xff5500, sparks: 5, ring: 14 },
+  miss: { color: 0xff3355, sparks: 0, ring: 12 },
 };
 
 const judgmentTextStyle = new TextStyle({
   fontFamily: "sans-serif",
-  fontSize: 24,
+  fontSize: 22,
   fontWeight: "bold",
   fill: 0xffffff,
   align: "center",
   dropShadow: {
     color: "#000000",
-    alpha: 0.7,
-    blur: 4,
+    alpha: 0.45,
+    blur: 3,
     distance: 0,
   },
 });
+
+const JUDGMENT_X = PLAYFIELD_X + PLAYFIELD_WIDTH / 2;
+const JUDGMENT_Y = JUDGE_LINE_Y - 48;
 
 function drawEmpty(graphics: Graphics) {
   graphics.clear();
@@ -120,25 +119,19 @@ function drawEmpty(graphics: Graphics) {
 function drawBurst(graphics: Graphics, effect: HitEffect, age: number) {
   const style = EFFECT_STYLE[effect.kind];
   const originX = receptorX(effect.lane);
-  const left = laneLeft(effect.lane);
   const t = Math.min(age / EFFECT_DURATION[effect.kind], 1);
   const fade = 1 - t;
   const expand = 1 - (1 - t) ** 3;
 
-  graphics.rect(left, JUDGE_LINE_Y - 18, LANE_WIDTH, 54).fill({
-    color: style.color,
-    alpha: fade * style.flash,
-  });
-
-  graphics.circle(originX, RECEPTOR_Y, 6 + expand * style.ring).stroke({
+  graphics.circle(originX, JUDGE_LINE_Y, 6 + expand * style.ring).stroke({
     width: 2 + fade * 2,
     color: style.color,
     alpha: fade * 0.95,
   });
 
   if (effect.kind === "perfect") {
-    graphics.circle(originX, RECEPTOR_Y, 12 * fade).fill({ color: 0xffffff, alpha: fade * 0.85 });
-    graphics.circle(originX, RECEPTOR_Y, 4 + expand * 16).stroke({
+    graphics.circle(originX, JUDGE_LINE_Y, 12 * fade).fill({ color: 0xffffff, alpha: fade * 0.85 });
+    graphics.circle(originX, JUDGE_LINE_Y, 4 + expand * 16).stroke({
       width: 2,
       color: 0xffffff,
       alpha: fade * 0.75,
@@ -148,12 +141,12 @@ function drawBurst(graphics: Graphics, effect: HitEffect, age: number) {
   if (effect.kind === "miss") {
     const size = 8 + expand * 5;
     graphics
-      .moveTo(originX - size, RECEPTOR_Y - size)
-      .lineTo(originX + size, RECEPTOR_Y + size)
+      .moveTo(originX - size, JUDGE_LINE_Y - size)
+      .lineTo(originX + size, JUDGE_LINE_Y + size)
       .stroke({ width: 4, color: style.color, alpha: fade });
     graphics
-      .moveTo(originX + size, RECEPTOR_Y - size)
-      .lineTo(originX - size, RECEPTOR_Y + size)
+      .moveTo(originX + size, JUDGE_LINE_Y - size)
+      .lineTo(originX - size, JUDGE_LINE_Y + size)
       .stroke({ width: 4, color: style.color, alpha: fade });
     return;
   }
@@ -161,7 +154,7 @@ function drawBurst(graphics: Graphics, effect: HitEffect, age: number) {
   if (effect.kind === "bad") {
     for (let index = 0; index < style.sparks; index += 1) {
       const spread = (index - (style.sparks - 1) / 2) * 8;
-      graphics.circle(originX + spread, RECEPTOR_Y + 8 + expand * 24, 2.2).fill({
+      graphics.circle(originX + spread, JUDGE_LINE_Y + 8 + expand * 24, 2.2).fill({
         color: style.color,
         alpha: fade,
       });
@@ -173,7 +166,7 @@ function drawBurst(graphics: Graphics, effect: HitEffect, age: number) {
     const angle = (Math.PI * 2 * index) / style.sparks - Math.PI / 2;
     const distance = 8 + expand * style.ring;
     graphics
-      .circle(originX + Math.cos(angle) * distance, RECEPTOR_Y + Math.sin(angle) * distance, 2.6)
+      .circle(originX + Math.cos(angle) * distance, JUDGE_LINE_Y + Math.sin(angle) * distance, 2.6)
       .fill({
         color: index % 2 === 0 ? 0xffffff : style.color,
         alpha: fade,
@@ -184,7 +177,6 @@ function drawBurst(graphics: Graphics, effect: HitEffect, age: number) {
 type NoteFieldProps = {
   audioContextRef: RefObject<AudioContext | null>;
   startTimeRef: RefObject<number>;
-  notesRef: RefObject<Note[]>;
   effectsRef: RefObject<HitEffect[]>;
   onMiss: (lane: number) => void;
 };
@@ -217,10 +209,6 @@ const LaneFlash = memo(function LaneFlash({
         color: LANE_DEFS[press.lane].color,
         alpha: fade * 0.22,
       });
-      graphics.rect(left, JUDGE_LINE_Y - 24, LANE_WIDTH, 48).fill({
-        color: 0xffffff,
-        alpha: fade * 0.28,
-      });
     }
   }, [pressesRef]);
 
@@ -229,14 +217,64 @@ const LaneFlash = memo(function LaneFlash({
   return <pixiGraphics ref={graphicsRef} draw={drawEmpty} />;
 });
 
+const JudgmentLabel = memo(function JudgmentLabel({
+  audioContextRef,
+  startTimeRef,
+  effectsRef,
+}: Pick<NoteFieldProps, "audioContextRef" | "startTimeRef" | "effectsRef">) {
+  const labelRef = useRef<Text | null>(null);
+  const shownKindRef = useRef<JudgmentKind | null>(null);
+
+  const updateLabel = useCallback(() => {
+    const audioContext = audioContextRef.current;
+    const label = labelRef.current;
+    if (!audioContext || !label) return;
+
+    const elapsedTime = audioContext.currentTime - startTimeRef.current;
+    const latest = effectsRef.current[effectsRef.current.length - 1];
+
+    if (!latest || elapsedTime - latest.startedAt >= EFFECT_DURATION[latest.kind]) {
+      label.alpha = 0;
+      shownKindRef.current = null;
+      return;
+    }
+
+    if (shownKindRef.current !== latest.kind) {
+      shownKindRef.current = latest.kind;
+      label.text = JUDGMENT_LABEL[latest.kind];
+      label.style.fill = EFFECT_STYLE[latest.kind].color;
+    }
+
+    const progress = Math.min((elapsedTime - latest.startedAt) / EFFECT_DURATION[latest.kind], 1);
+    const fade = 1 - progress;
+    label.alpha = fade * 0.72;
+    label.scale.set(1);
+    label.position.set(JUDGMENT_X, JUDGMENT_Y - progress * 8);
+  }, [audioContextRef, effectsRef, startTimeRef]);
+
+  useTick(updateLabel);
+
+  return (
+    <pixiText
+      ref={(node) => {
+        labelRef.current = node;
+        node?.anchor.set(0.5);
+      }}
+      text=""
+      x={JUDGMENT_X}
+      y={JUDGMENT_Y}
+      alpha={0}
+      style={judgmentTextStyle}
+    />
+  );
+});
+
 const EffectLayer = memo(function EffectLayer({
   audioContextRef,
   startTimeRef,
   effectsRef,
 }: Pick<NoteFieldProps, "audioContextRef" | "startTimeRef" | "effectsRef">) {
   const graphicsRef = useRef<Graphics | null>(null);
-  const labelRef = useRef<Text | null>(null);
-  const shownKindRef = useRef<JudgmentKind | null>(null);
 
   const updateEffects = useCallback(() => {
     const audioContext = audioContextRef.current;
@@ -257,31 +295,6 @@ const EffectLayer = memo(function EffectLayer({
     for (const effect of effects) {
       drawBurst(graphics, effect, elapsedTime - effect.startedAt);
     }
-
-    const label = labelRef.current;
-    const latest = effects[effects.length - 1];
-    if (!label) return;
-
-    if (!latest) {
-      label.alpha = 0;
-      shownKindRef.current = null;
-      return;
-    }
-
-    if (shownKindRef.current !== latest.kind) {
-      shownKindRef.current = latest.kind;
-      label.text = JUDGMENT_LABEL[latest.kind];
-      label.style.fill = EFFECT_STYLE[latest.kind].color;
-    }
-
-    const age = elapsedTime - latest.startedAt;
-    const progress = Math.min(age / EFFECT_DURATION[latest.kind], 1);
-    const fade = 1 - progress;
-    const expand = 1 - (1 - progress) ** 3;
-    const pop = Math.min(progress / 0.18, 1);
-    label.alpha = progress < 0.12 ? progress / 0.12 : fade;
-    label.scale.set(0.72 + pop * 0.28);
-    label.position.set(receptorX(latest.lane), JUDGE_LINE_Y - 46 - expand * 28);
   }, [audioContextRef, effectsRef, startTimeRef]);
 
   useTick({
@@ -289,22 +302,7 @@ const EffectLayer = memo(function EffectLayer({
     priority: UPDATE_PRIORITY.LOW,
   });
 
-  return (
-    <pixiContainer>
-      <pixiGraphics ref={graphicsRef} draw={drawEmpty} />
-      <pixiText
-        ref={(node) => {
-          labelRef.current = node;
-          node?.anchor.set(0.5);
-        }}
-        text=""
-        x={STAGE_WIDTH / 2}
-        y={JUDGE_LINE_Y - 46}
-        alpha={0}
-        style={judgmentTextStyle}
-      />
-    </pixiContainer>
-  );
+  return <pixiGraphics ref={graphicsRef} draw={drawEmpty} />;
 });
 
 function drawStage(graphics: Graphics) {
@@ -325,9 +323,16 @@ function drawStage(graphics: Graphics) {
       color: LANE_DEFS[lane].color,
       alpha: 0.45,
     });
+    const receptorHeight = NOTE_HEIGHT + 4;
     graphics
-      .roundRect(noteLeft(lane) - 4, JUDGE_LINE_Y - 2, NOTE_WIDTH + 8, NOTE_HEIGHT + 4, 8)
-      .stroke({ width: 2, color: LANE_DEFS[lane].color, alpha: 0.95 });
+      .roundRect(
+        noteLeft(lane) - 4,
+        JUDGE_LINE_Y - receptorHeight / 2,
+        NOTE_WIDTH + 8,
+        receptorHeight,
+        8,
+      )
+      .stroke({ width: 1.5, color: LANE_DEFS[lane].color, alpha: 0.16 });
   }
 
   graphics.rect(PLAYFIELD_X, JUDGE_LINE_Y - 10, PLAYFIELD_WIDTH, 20).fill({
@@ -349,7 +354,6 @@ const drawNotes = noteFills.map((fill) => (graphics: Graphics) => {
 const NoteField = memo(function NoteField({
   audioContextRef,
   startTimeRef,
-  notesRef,
   effectsRef,
   onMiss,
 }: NoteFieldProps) {
@@ -361,7 +365,7 @@ const NoteField = memo(function NoteField({
 
     const elapsedTime = audioContext.currentTime - startTimeRef.current;
 
-    notesRef.current.forEach((note, index) => {
+    useNoteStore.getState().notes.forEach((note, index) => {
       const graphic = noteGraphicsRef.current[index];
       if (!graphic) return;
 
@@ -381,7 +385,7 @@ const NoteField = memo(function NoteField({
       graphic.visible = true;
       graphic.position.set(noteLeft(note.lane), noteY);
     });
-  }, [audioContextRef, notesRef, onMiss, startTimeRef]);
+  }, [audioContextRef, onMiss, startTimeRef]);
 
   useTick(updateNotes);
 
@@ -416,7 +420,6 @@ export const Stage = memo(function Stage({
   isPlaying,
   audioContextRef,
   startTimeRef,
-  notesRef,
   effectsRef,
   pressesRef,
   onMiss,
@@ -433,6 +436,11 @@ export const Stage = memo(function Stage({
     >
       <pixiGraphics draw={drawStage} />
       <LaneFlash pressesRef={pressesRef} />
+      <JudgmentLabel
+        audioContextRef={audioContextRef}
+        startTimeRef={startTimeRef}
+        effectsRef={effectsRef}
+      />
       <pixiContainer>
         {LANE_DEFS.map((lane, index) => (
           <pixiText
@@ -452,7 +460,6 @@ export const Stage = memo(function Stage({
         <NoteField
           audioContextRef={audioContextRef}
           startTimeRef={startTimeRef}
-          notesRef={notesRef}
           effectsRef={effectsRef}
           onMiss={onMiss}
         />

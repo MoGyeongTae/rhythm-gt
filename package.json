@@ -13,7 +13,8 @@
     "@pixi/react": "^8.0.5",
     "pixi.js": "^8.22.0",
     "react": "^19.2.8",
-    "react-dom": "^19.2.8"
+    "react-dom": "^19.2.8",
+    "zustand": "^5.0.16"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

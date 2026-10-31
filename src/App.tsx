@@ -2,14 +2,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Stage, type HitEffect, type LanePress } from "./game/Stage";
 import {
   EMPTY_JUDGMENT,
-  createNotes,
   findNearestUnhitNote,
   judgeTiming,
   judgmentOf,
   type Judgment,
   type JudgmentKind,
-  type Note,
 } from "./game/judgment";
+import { useNoteStore } from "./store/noteStore";
 import { laneIndexFromKey } from "./game/playfield";
 
 export default function RhythmGame() {
@@ -20,7 +19,6 @@ export default function RhythmGame() {
   const audioContextRef = useRef<AudioContext | null>(null);
   const audioBufferRef = useRef<AudioBuffer | null>(null);
   const startTimeRef = useRef(0);
-  const notesRef = useRef<Note[]>([]);
   const effectsRef = useRef<HitEffect[]>([]);
   const pressesRef = useRef<LanePress[]>([]);
 
@@ -76,7 +74,7 @@ export default function RhythmGame() {
     const buffer = audioBufferRef.current;
     if (!audioContext || !buffer) return;
 
-    notesRef.current = createNotes();
+    useNoteStore.getState().resetNotes();
 
     const source = audioContext.createBufferSource();
     source.buffer = buffer;
@@ -103,7 +101,7 @@ export default function RhythmGame() {
       if (!isPlaying || !audioContext) return;
 
       const elapsedTime = audioContext.currentTime - startTimeRef.current;
-      const nearest = findNearestUnhitNote(notesRef.current, lane, elapsedTime);
+      const nearest = findNearestUnhitNote(useNoteStore.getState().notes, lane, elapsedTime);
       if (!nearest) return;
 
       const kind = judgeTiming(nearest.diff);
@@ -146,7 +144,6 @@ export default function RhythmGame() {
         isPlaying={isPlaying}
         audioContextRef={audioContextRef}
         startTimeRef={startTimeRef}
-        notesRef={notesRef}
         effectsRef={effectsRef}
         pressesRef={pressesRef}
         onMiss={handleMiss}
